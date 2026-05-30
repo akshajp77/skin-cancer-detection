@@ -43,6 +43,10 @@ Grad-CAM heatmaps confirm the model focuses on diagnostically relevant regions â
 
 *Red = highest model attention, blue = lowest*
 
+![Grad-CAM](fig_gradcam.png)
+![Confusion Matrix](fig_confusion_matrix.png)
+![Training Curves](fig_training_curves.png)
+
 ---
 
 ## Dataset
