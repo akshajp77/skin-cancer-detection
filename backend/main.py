@@ -18,10 +18,15 @@ app = FastAPI(
     description="Biomedical engineering pipeline targeting nested EfficientNetB0 feature maps."
 )
 
-# Enable CORS for local development
+# CORS: comma-separated list of allowed frontend origins, e.g.
+# ALLOWED_ORIGINS="https://your-frontend.vercel.app,http://localhost:5173"
+# Defaults to "*" (open) so local dev and first deploys work out of the box.
+_origins_env = os.environ.get("ALLOWED_ORIGINS", "*")
+ALLOWED_ORIGINS = ["*"] if _origins_env.strip() == "*" else [o.strip() for o in _origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production requirements
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,6 +125,11 @@ def preprocess_image(image_bytes: bytes):
     img_array = np.array(img_resized, dtype=np.float32)  # Keep 0-255 range
     img_batch = np.expand_dims(img_array, axis=0)
     return img_resized, img_array, img_batch
+
+@app.get("/")
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "model_loaded": model is not None}
 
 @app.post("/predict")
 async def predict_lesion(file: UploadFile = File(...)):
@@ -221,4 +231,5 @@ async def predict_lesion(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

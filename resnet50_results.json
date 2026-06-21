@@ -1,0 +1,126 @@
+{
+  "model": "ResNet-50",
+  "total_params": 23602055,
+  "trainable_params_phase_a": 14343,
+  "test_accuracy": 0.816,
+  "auc_roc_macro": 0.9633,
+  "per_class": {
+    "nv": {
+      "precision": 0.94,
+      "recall": 0.88,
+      "f1": 0.91,
+      "support": 1006
+    },
+    "mel": {
+      "precision": 0.52,
+      "recall": 0.62,
+      "f1": 0.57,
+      "support": 167
+    },
+    "bkl": {
+      "precision": 0.64,
+      "recall": 0.68,
+      "f1": 0.66,
+      "support": 165
+    },
+    "bcc": {
+      "precision": 0.76,
+      "recall": 0.77,
+      "f1": 0.76,
+      "support": 77
+    },
+    "akiec": {
+      "precision": 0.58,
+      "recall": 0.69,
+      "f1": 0.63,
+      "support": 49
+    },
+    "vasc": {
+      "precision": 0.83,
+      "recall": 0.91,
+      "f1": 0.87,
+      "support": 22
+    },
+    "df": {
+      "precision": 0.6,
+      "recall": 0.88,
+      "f1": 0.71,
+      "support": 17
+    }
+  },
+  "confusion_matrix": [
+    [
+      883,
+      70,
+      35,
+      8,
+      6,
+      1,
+      3
+    ],
+    [
+      34,
+      104,
+      17,
+      3,
+      8,
+      0,
+      1
+    ],
+    [
+      16,
+      22,
+      112,
+      5,
+      8,
+      0,
+      2
+    ],
+    [
+      5,
+      2,
+      2,
+      59,
+      3,
+      3,
+      3
+    ],
+    [
+      1,
+      2,
+      9,
+      2,
+      34,
+      0,
+      1
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      0,
+      20,
+      0
+    ],
+    [
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      15
+    ]
+  ],
+  "class_order": [
+    "nv",
+    "mel",
+    "bkl",
+    "bcc",
+    "akiec",
+    "vasc",
+    "df"
+  ],
+  "notes": "Same stratified 70/15/15 split (seed=42), same two-phase training schedule (Phase A lr=1e-4 frozen base, Phase B lr=1e-5 fine-tune, both patience=6 early stopping on val_accuracy) as the EfficientNetB0 baseline, for a fair comparison."
+}

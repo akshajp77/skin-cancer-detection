@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: skin-cancer-detection-api
+    runtime: docker
+    repo: https://github.com/akshajp77/skin-cancer-detection
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: "*"
+    healthCheckPath: /health

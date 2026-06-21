@@ -1,0 +1,30 @@
+{
+  "dataset": "PH2 (external, 200 images)",
+  "task": "binary: melanoma vs. nevus (common + atypical)",
+  "task_note": "PH2 only provides 3 labels (common nevus / atypical nevus / melanoma), not the 7-class HAM10000 taxonomy. Evaluation is restricted to the model's 'mel' and 'nv' output probabilities, renormalized to sum to 1 (p_mel / (p_mel + p_nv)), thresholded at 0.5. This is NOT a like-for-like comparison with the 76.4% in-distribution 7-class accuracy figure -- it isolates melanoma-vs-nevus discrimination ability under domain shift.",
+  "n_images": 200,
+  "class_counts": {
+    "nevus": 160,
+    "melanoma": 40
+  },
+  "accuracy": 0.715,
+  "auc_roc": 0.8239,
+  "melanoma_sensitivity_recall": 0.78,
+  "melanoma_precision": 0.39,
+  "nevus_precision": 0.93,
+  "nevus_recall": 0.7,
+  "confusion_matrix": [
+    [
+      112,
+      48
+    ],
+    [
+      9,
+      31
+    ]
+  ],
+  "confusion_matrix_order": [
+    "nevus (0)",
+    "melanoma (1)"
+  ]
+}
