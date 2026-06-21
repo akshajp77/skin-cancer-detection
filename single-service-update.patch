@@ -1,0 +1,362 @@
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000..ca9d5a1
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,11 @@
++.git/
++**/__pycache__/
++**/*.pyc
++**/.venv/
++**/venv/
++**/.env
++frontend/node_modules/
++frontend/dist/
++backend/static/
++*.md
++*.ipynb
+diff --git a/DEPLOYMENT.md b/DEPLOYMENT.md
+index df3ecf8..897d6f4 100644
+--- a/DEPLOYMENT.md
++++ b/DEPLOYMENT.md
+@@ -1,74 +1,62 @@
+ # Deploying the Skin Cancer Detection App
+ 
+-This covers what changed to make the app deployable, and the steps to actually get it live.
++This is now a **single-service deployment**: one Docker container runs the FastAPI backend,
++which also serves the built React frontend directly. One host, one URL, no separate
++frontend/backend deploys, no CORS config, no environment variables to wire up between services.
+ 
+-## What was wrong before
++## How it works
+ 
+-1. **Frontend hardcoded `http://127.0.0.1:8000`** as the backend URL in `App.jsx`. No matter
+-   where you deployed the frontend, it would only ever try to reach your own laptop — so
+-   it silently fell back to the local mock simulator. This is why the Vercel deploy "didn't work."
+-2. **`opencv-python` (not headless)** pulls in GUI/X11 libraries that most container hosts
+-   (Render, Railway, Fly.io) don't have installed, causing `ImportError: libGL.so.1` at runtime.
+-3. **No Dockerfile.** Render/Railway can build Python apps without one, but their auto-detection
+-   for TensorFlow + OpenCV is unreliable — a Dockerfile gives you a guaranteed-reproducible build.
+-4. **CORS was wide open (`*`)** with no way to restrict it later via config.
+-5. **No `$PORT` handling** — most hosts assign a port dynamically via an env var; the app
+-   needs to listen on whatever they hand it.
++`Dockerfile` (repo root) is a two-stage build:
++1. **Stage 1** builds the React app (`npm run build`) into static files.
++2. **Stage 2** installs the Python backend and copies those static files into `backend/static/`.
+ 
+-## What changed
++At runtime, `main.py` serves `/predict` and `/health` as API routes, and mounts everything else
++(`/`, `/assets/*`, etc.) to serve the built frontend from that `static/` folder. The frontend
++calls `/predict` as a relative path — since it's served by the same process, there's no
++cross-origin URL to configure.
+ 
+-- `frontend/src/App.jsx` — backend URL now reads from `VITE_API_URL` (env var), falls back to
+-  localhost for local dev.
+-- `frontend/.env.example` — documents the var.
+-- `backend/requirements.txt` — `opencv-python` → `opencv-python-headless`, `tensorflow` →
+-  `tensorflow-cpu` (smaller, faster build, no GPU needed for inference).
+-- `backend/main.py` — CORS origins now configurable via `ALLOWED_ORIGINS` env var (comma-separated,
+-  defaults to `*`); listens on `$PORT`; added a `/health` route for the host's health checks.
+-- `backend/Dockerfile` + `.dockerignore` — reproducible container build.
+-- `render.yaml` — optional, lets Render auto-configure the service from the repo.
+-- Removed `backend/__pycache__` from git tracking (it was accidentally committed).
++In local dev, `vite.config.js` proxies `/predict` and `/health` to `http://127.0.0.1:8000`, so
++the same relative-path code works whether you're running the Vite dev server + FastAPI
++separately, or the built single-container version.
+ 
+-## Step 1 — Deploy the backend (Render)
++## Deploy to Render (or Railway / Fly.io — same Dockerfile works on any of them)
+ 
+-Railway works identically; just skip the Render-specific UI steps below and use Railway's
+-"Deploy from GitHub" with the same Dockerfile.
+-
+-1. Push these changes to `github.com/akshajp77/skin-cancer-detection`.
++1. Push this repo to GitHub (already done if you're reading this from the repo).
+ 2. Go to [render.com](https://render.com) → **New** → **Web Service** → connect the repo.
+-3. Render should detect `render.yaml` automatically. If not, set manually:
+-   - **Root Directory:** `backend`
++3. Render should auto-detect `render.yaml` and use it. If not, set manually:
+    - **Runtime:** Docker
+-   - **Dockerfile Path:** `backend/Dockerfile`
+-   - **Plan:** Free (note: free tier spins down after 15 min idle — first request after
+-     idle takes ~30-60s to wake up, and has 512MB RAM which is tight for TF + the model;
+-     upgrade to Starter ($7/mo) if you hit memory errors)
+-4. Deploy. Once live, note the URL Render gives you, e.g. `https://skin-cancer-detection-api.onrender.com`.
+-5. Test it: `curl https://your-app.onrender.com/health` should return `{"status":"ok","model_loaded":true}`.
+-
+-## Step 2 — Deploy the frontend (Vercel)
+-
+-1. Go to [vercel.com](https://vercel.com) → **New Project** → import the repo.
+-2. **Root Directory:** `frontend`
+-3. Vercel auto-detects Vite (build command `npm run build`, output `dist`) — no changes needed.
+-4. Under **Environment Variables**, add:
+-   - `VITE_API_URL` = `https://your-app.onrender.com` (the URL from Step 1, no trailing slash)
+-5. Deploy.
+-
+-## Step 3 — Lock down CORS (optional but recommended)
+-
+-Once you have your real Vercel URL, go back to Render → your service → **Environment** and set:
+-
+-```
+-ALLOWED_ORIGINS=https://your-frontend.vercel.app
++   - **Dockerfile Path:** `./Dockerfile`
++   - **Docker Build Context:** `.` (repo root — important, since the build needs both
++     `frontend/` and `backend/`)
++   - **Plan:** Free (note: 512MB RAM is tight for TensorFlow; upgrade to Starter, $7/mo,
++     if you see memory errors. Free tier also spins down after 15 min idle — first request
++     after that takes ~30-60s to wake up.)
++4. Deploy. Render builds the frontend, then the backend image, then starts the container.
++5. Once live, open the URL Render gives you (e.g. `https://skin-cancer-detection.onrender.com`)
++   directly in your browser — that's the actual app, frontend and all. No second deploy needed.
++
++## Local development
++
++Run frontend and backend as two processes (normal Vite + FastAPI dev workflow):
++
++```bash
++# Terminal 1
++cd backend
++pip install -r requirements.txt
++python main.py            # http://127.0.0.1:8000
++
++# Terminal 2
++cd frontend
++npm install
++npm run dev                # http://127.0.0.1:5173 - open this one in your browser
+ ```
+ 
+-Redeploy the backend. This restricts API access to just your frontend instead of any website.
++The Vite dev server proxies `/predict` calls to the backend automatically, so you don't need
++any extra config to make this work locally.
+ 
+-## Verifying end to end
++## Verifying the deployed app
+ 
+-1. Open your Vercel URL.
+-2. Upload a lesion image.
+-3. If it calls the real backend, you'll see a short delay (cold start on free tier) then a
+-   real Grad-CAM heatmap. If it instantly shows a result with no network delay, it silently
+-   fell back to the local simulator — check the browser console for a fetch error and confirm
+-   `VITE_API_URL` is set correctly in Vercel and the backend `/health` endpoint responds.
++1. Open your Render URL. You should see the actual React UI, not a JSON response.
++2. `curl https://your-app.onrender.com/health` → `{"status":"ok","model_loaded":true}`
++3. Upload a lesion image through the UI — first request after idle may take ~30-60s on the
++   free tier (cold start), after that it should respond in a couple seconds.
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..4c50f58
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,31 @@
++# ---- Stage 1: build the React frontend into static files ----
++FROM node:20-slim AS frontend-build
++WORKDIR /frontend
++COPY frontend/package*.json ./
++RUN npm ci
++COPY frontend/ ./
++RUN npm run build
++
++# ---- Stage 2: Python backend that also serves the built frontend ----
++FROM python:3.11-slim
++WORKDIR /app
++
++# System libs needed by opencv-python-headless and tensorflow at runtime
++RUN apt-get update && apt-get install -y --no-install-recommends \
++    libglib2.0-0 \
++    && rm -rf /var/lib/apt/lists/*
++
++COPY backend/requirements.txt .
++RUN pip install --no-cache-dir -r requirements.txt
++
++COPY backend/main.py .
++COPY backend/best_model.keras .
++
++# Bring in the built frontend; main.py serves this directory at "/" if it exists
++COPY --from=frontend-build /frontend/dist ./static
++
++# Most hosts (Render, Railway, Fly.io) inject $PORT at runtime; default to 8000 for local docker run.
++ENV PORT=8000
++EXPOSE 8000
++
++CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+diff --git a/backend/.dockerignore b/backend/.dockerignore
+deleted file mode 100644
+index 242b13e..0000000
+--- a/backend/.dockerignore
++++ /dev/null
+@@ -1,5 +0,0 @@
+-__pycache__/
+-*.pyc
+-.venv/
+-venv/
+-.env
+diff --git a/backend/.gitignore b/backend/.gitignore
+index 242b13e..4ccef7f 100644
+--- a/backend/.gitignore
++++ b/backend/.gitignore
+@@ -3,3 +3,6 @@ __pycache__/
+ .venv/
+ venv/
+ .env
++
++# Built frontend (generated by `npm run build` / the Docker build step, not source)
++static/
+diff --git a/backend/Dockerfile b/backend/Dockerfile
+deleted file mode 100644
+index abbf60d..0000000
+--- a/backend/Dockerfile
++++ /dev/null
+@@ -1,20 +0,0 @@
+-FROM python:3.11-slim
+-
+-WORKDIR /app
+-
+-# System libs needed by opencv-python-headless and tensorflow at runtime
+-RUN apt-get update && apt-get install -y --no-install-recommends \
+-    libglib2.0-0 \
+-    && rm -rf /var/lib/apt/lists/*
+-
+-COPY requirements.txt .
+-RUN pip install --no-cache-dir -r requirements.txt
+-
+-COPY main.py .
+-COPY best_model.keras .
+-
+-# Most hosts (Render, Railway, Fly.io) inject $PORT at runtime; default to 8000 for local docker run.
+-ENV PORT=8000
+-EXPOSE 8000
+-
+-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+diff --git a/backend/main.py b/backend/main.py
+index 42b4649..1aa3971 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -8,6 +8,7 @@ from PIL import Image
+ import tensorflow as tf
+ from fastapi import FastAPI, File, UploadFile, HTTPException
+ from fastapi.middleware.cors import CORSMiddleware
++from fastapi.staticfiles import StaticFiles
+ 
+ # Configure Logging
+ logging.basicConfig(level=logging.INFO)
+@@ -18,9 +19,11 @@ app = FastAPI(
+     description="Biomedical engineering pipeline targeting nested EfficientNetB0 feature maps."
+ )
+ 
+-# CORS: comma-separated list of allowed frontend origins, e.g.
+-# ALLOWED_ORIGINS="https://your-frontend.vercel.app,http://localhost:5173"
+-# Defaults to "*" (open) so local dev and first deploys work out of the box.
++# CORS: not required for normal operation anymore, since the frontend is served
++# by this same FastAPI process (same-origin). Left in and open by default in case
++# you want to call /predict directly from another origin (e.g. a separate tool,
++# a mobile app, or testing from a different frontend). Restrict via env var if needed:
++# ALLOWED_ORIGINS="https://example.com,http://localhost:5173"
+ _origins_env = os.environ.get("ALLOWED_ORIGINS", "*")
+ ALLOWED_ORIGINS = ["*"] if _origins_env.strip() == "*" else [o.strip() for o in _origins_env.split(",") if o.strip()]
+ 
+@@ -126,7 +129,6 @@ def preprocess_image(image_bytes: bytes):
+     img_batch = np.expand_dims(img_array, axis=0)
+     return img_resized, img_array, img_batch
+ 
+-@app.get("/")
+ @app.get("/health")
+ def health_check():
+     return {"status": "ok", "model_loaded": model is not None}
+@@ -229,6 +231,18 @@ async def predict_lesion(file: UploadFile = File(...)):
+         logger.error(f"Inference pipeline execution error: {str(e)}")
+         raise HTTPException(status_code=500, detail=f"Inference pipeline execution failed: {str(e)}")
+ 
++# Serve the built frontend (single-service deployment).
++# Registered last so it doesn't shadow the /health and /predict routes above.
++# This directory is populated by the Docker build (frontend build copied to backend/static/);
++# it won't exist when just running `python main.py` locally without a build step, which is fine —
++# the API still works, you just run the Vite dev server separately for the UI in that case.
++FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
++if os.path.isdir(FRONTEND_DIST):
++    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
++    logger.info(f"Serving built frontend from {FRONTEND_DIST}")
++else:
++    logger.info(f"No frontend build found at {FRONTEND_DIST} - running API-only (run the Vite dev server separately for the UI).")
++
+ if __name__ == "__main__":
+     import uvicorn
+     port = int(os.environ.get("PORT", 8000))
+diff --git a/frontend/.env.example b/frontend/.env.example
+deleted file mode 100644
+index d0c4517..0000000
+--- a/frontend/.env.example
++++ /dev/null
+@@ -1,8 +0,0 @@
+-# Copy this file to .env for local dev, or set this variable directly
+-# in your hosting provider's dashboard (e.g. Vercel > Project > Settings > Environment Variables)
+-#
+-# Local development (default if unset):
+-# VITE_API_URL=http://127.0.0.1:8000
+-#
+-# Production (point at your deployed FastAPI backend, no trailing slash):
+-VITE_API_URL=https://your-backend.onrender.com
+diff --git a/frontend/src/App.jsx b/frontend/src/App.jsx
+index f16b95b..1b25e6a 100644
+--- a/frontend/src/App.jsx
++++ b/frontend/src/App.jsx
+@@ -10,9 +10,9 @@ import {
+   FileText
+ } from "lucide-react";
+ 
+-// Backend URL: set VITE_API_URL in a deployed environment (e.g. your Render/Railway
+-// backend URL). Falls back to localhost for local development.
+-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
++// No backend URL needed: the production build is served BY the FastAPI backend
++// itself (same origin), so "/predict" just works. In local dev, vite.config.js
++// proxies "/predict" to http://127.0.0.1:8000 so the same relative path works there too.
+ 
+ // 7 class list with classification characteristics and malignancy designations
+ const LESION_INFO = {
+@@ -159,7 +159,7 @@ export default function App() {
+     formData.append("file", selectedFile);
+ 
+     try {
+-      const response = await fetch(`${API_URL}/predict`, {
++      const response = await fetch(`/predict`, {
+         method: "POST",
+         body: formData,
+       });
+diff --git a/frontend/vite.config.js b/frontend/vite.config.js
+index 8b0f57b..88615cf 100644
+--- a/frontend/vite.config.js
++++ b/frontend/vite.config.js
+@@ -4,4 +4,14 @@ import react from '@vitejs/plugin-react'
+ // https://vite.dev/config/
+ export default defineConfig({
+   plugins: [react()],
++  server: {
++    // In local dev, the frontend (Vite, :5173) and backend (FastAPI, :8000) run
++    // as separate processes. This proxies relative API calls to the backend so
++    // the app code can use the same "/predict" path locally and in production
++    // (where FastAPI serves the built frontend itself, same origin).
++    proxy: {
++      '/predict': 'http://127.0.0.1:8000',
++      '/health': 'http://127.0.0.1:8000',
++    },
++  },
+ })
+diff --git a/render.yaml b/render.yaml
+index 8d7f458..665218a 100644
+--- a/render.yaml
++++ b/render.yaml
+@@ -1,12 +1,9 @@
+ services:
+   - type: web
+-    name: skin-cancer-detection-api
++    name: skin-cancer-detection
+     runtime: docker
+     repo: https://github.com/akshajp77/skin-cancer-detection
+-    dockerfilePath: ./backend/Dockerfile
+-    dockerContext: ./backend
++    dockerfilePath: ./Dockerfile
++    dockerContext: .
+     plan: free
+-    envVars:
+-      - key: ALLOWED_ORIGINS
+-        value: "*"
+     healthCheckPath: /health

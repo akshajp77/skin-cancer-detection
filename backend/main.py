@@ -8,6 +8,7 @@ from PIL import Image
 import tensorflow as tf
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -18,9 +19,11 @@ app = FastAPI(
     description="Biomedical engineering pipeline targeting nested EfficientNetB0 feature maps."
 )
 
-# CORS: comma-separated list of allowed frontend origins, e.g.
-# ALLOWED_ORIGINS="https://your-frontend.vercel.app,http://localhost:5173"
-# Defaults to "*" (open) so local dev and first deploys work out of the box.
+# CORS: not required for normal operation anymore, since the frontend is served
+# by this same FastAPI process (same-origin). Left in and open by default in case
+# you want to call /predict directly from another origin (e.g. a separate tool,
+# a mobile app, or testing from a different frontend). Restrict via env var if needed:
+# ALLOWED_ORIGINS="https://example.com,http://localhost:5173"
 _origins_env = os.environ.get("ALLOWED_ORIGINS", "*")
 ALLOWED_ORIGINS = ["*"] if _origins_env.strip() == "*" else [o.strip() for o in _origins_env.split(",") if o.strip()]
 
@@ -126,7 +129,6 @@ def preprocess_image(image_bytes: bytes):
     img_batch = np.expand_dims(img_array, axis=0)
     return img_resized, img_array, img_batch
 
-@app.get("/")
 @app.get("/health")
 def health_check():
     return {"status": "ok", "model_loaded": model is not None}
@@ -228,6 +230,18 @@ async def predict_lesion(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Inference pipeline execution error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Inference pipeline execution failed: {str(e)}")
+
+# Serve the built frontend (single-service deployment).
+# Registered last so it doesn't shadow the /health and /predict routes above.
+# This directory is populated by the Docker build (frontend build copied to backend/static/);
+# it won't exist when just running `python main.py` locally without a build step, which is fine —
+# the API still works, you just run the Vite dev server separately for the UI in that case.
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+    logger.info(f"Serving built frontend from {FRONTEND_DIST}")
+else:
+    logger.info(f"No frontend build found at {FRONTEND_DIST} - running API-only (run the Vite dev server separately for the UI).")
 
 if __name__ == "__main__":
     import uvicorn

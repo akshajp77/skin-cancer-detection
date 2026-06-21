@@ -1,0 +1,11 @@
+.git/
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/.env
+frontend/node_modules/
+frontend/dist/
+backend/static/
+*.md
+*.ipynb

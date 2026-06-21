@@ -10,9 +10,9 @@ import {
   FileText
 } from "lucide-react";
 
-// Backend URL: set VITE_API_URL in a deployed environment (e.g. your Render/Railway
-// backend URL). Falls back to localhost for local development.
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+// No backend URL needed: the production build is served BY the FastAPI backend
+// itself (same origin), so "/predict" just works. In local dev, vite.config.js
+// proxies "/predict" to http://127.0.0.1:8000 so the same relative path works there too.
 
 // 7 class list with classification characteristics and malignancy designations
 const LESION_INFO = {
@@ -159,7 +159,7 @@ export default function App() {
     formData.append("file", selectedFile);
 
     try {
-      const response = await fetch(`${API_URL}/predict`, {
+      const response = await fetch(`/predict`, {
         method: "POST",
         body: formData,
       });
